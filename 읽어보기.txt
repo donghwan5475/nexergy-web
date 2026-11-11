@@ -1,5 +1,3 @@
-애드코리아ㅣ디자인천사 (1544-1265)
-
 Nexergy LH2 배관 열유입 분석 · 클릭형 프로토타입 (최종 납품본)
 
 [파일 구성]
@@ -27,3 +25,26 @@ index.html을 크롬 또는 엣지에서 엽니다. 이 묶음은 인터넷 없�
 - 계산 파일이 연결 규칙과 다른 형식이거나 오류가 나면 예시 계산으로 표시됩니다.
 - 기본으로 들어 있는 계산은 화면 시연용 예시 계산이며, 계산 결과의 정확성은 보증하지 않습니다.
 - PDF는 화면을 이미지로 찍어 만드는 방식이라, PDF 안의 글자는 선택 · 검색되지 않습니다.
+
+[11/10 수정 요청 반영 내용]
+- 바뀐 파일: style.css, app.js의 화면 그리는 부분(render 함수 등)만 바꿨습니다.
+  params · core · scenarios 함수, nexergy-calc.js, index.html은 그대로입니다.
+- 색: 아이스 배경, 네이비 글자 · 선. 주황은 열이 들어오는 경로 그림(결과 단면, 회수 시점 점, 비교 그래프의 현재 설계 점)에만 씁니다.
+- 결과 화면 '열이 들어오는 길' 그림 id
+  전체: heatpath
+  화살표: arrow-parts, arrow-rad, arrow-sup, arrow-gas (폼 단열일 때 arrow-foam, arrow-parts)
+  W 값: val-parts, val-rad, val-sup, val-gas, val-foam / 비중: pct-parts, pct-rad, pct-sup, pct-gas, pct-foam
+  연간 손실액 등: val-loss, val-q, val-perm, val-bogday, val-bogyr
+- 입력 화면 단면 그림 id: section, sec-jacket, sec-vac, sec-mli, sec-foam, sec-pipe, sec-sup
+- 내관 호칭 선택 칸: 키 seg.(구간번호).dn (data-seg="번호" data-f="dn", id seg-번호-dn)
+  목록 15A~100A, 직접 입력 (KS D 3576). 기본값 A 40A, B · C 25A. 외경 · 두께 칸은 그대로 직접 고칠 수 있습니다.
+  호칭을 고르면 외경 · 두께가 채워지는 동작은 팀에서 연결합니다.
+- 아래 안내 바(이전 · 다음): html 또는 body 태그에 class="no-protobar"를 붙이면 바와 아래 여백(84px)이 함께 없어집니다.
+  바가 켜져 있을 때는 페이지 아래에 바 높이만큼 여백이 있어 마지막 줄을 가리지 않습니다.
+- 리포트 2쪽 끝에 검토자 · 서명 · 일자 칸을 넣었습니다 (id rp-reviewer, rp-sign, rp-date).
+
+[11/11 추가 수정]
+- 결과 단면 그림 가운데 온도: 계산 결과 r.p.Tsat_K를 소수 첫째 자리 켈빈으로 표시 (예: 24.6 K, id val-tsat). 값이 없으면 °C로 표시.
+- 단면 그림은 최소 폭 520px(글자 최소 87%)로 유지하고, 그보다 좁으면 그림 영역만 가로로 넘겨 봅니다.
+- 표 숫자 칸은 줄바꿈하지 않습니다.
+- 창 폭 1280px 이하: 결과 화면은 표와 그림을 위아래로 배치. 1200px 이하: 상단 바 간격을 줄이고, 1060px 이하: 프로젝트 이름 칸을 숨깁니다.

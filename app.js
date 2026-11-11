@@ -25,8 +25,8 @@ var SUPMAT = {
 };
 var PARTTYPES = {'밸브':2.5,'바요넷':1.2,'엘보':0.3,'플랜지':0.8,'기타':1.0};
 var PIPEMATS = ['SUS316L','SUS304','알루미늄'];
-var COLORS = {parts:'#22303F', rad:'#1E63B5', sup:'#D08A2E', gas:'#8DBBEA', foam:'#5F7C9E'};
-var TILE = {A:{bg:'#BCC5CE',dark:false}, B:{bg:'#7F98B6',dark:false}, C:{bg:'#1E63B5',dark:true}};
+var COLORS = {parts:'#0F2740', rad:'#1E4F80', sup:'#9AA8B4', gas:'#7FA6CC', foam:'#3A5068'}; // 화면 표시용 색 (계산과 무관)
+var TILE = {A:{bg:'#C3CCD5',dark:false}, B:{bg:'#7FA6CC',dark:false}, C:{bg:'#0F2740',dark:true}}; // 화면 표시용 색
 var GROUPS = [['project','프로젝트'],['op','운전 조건'],['seg','배관 구간'],['ins','단열 구성'],['sup','지지대'],['parts','부품']];
 var GNAME = {}; GROUPS.forEach(function(g){GNAME[g[0]]=g[1];});
 var STORE_KEY = 'nexergy-ui-v2';
@@ -36,9 +36,9 @@ function defaults(){
     project:{name:'○○ 액화수소충전소 이송배관 (예시)', author:'Nexergy', date:'2026-10-30', memo:''},
     op:{fluid:'LH2', pressure:'2.0', ambient:'25', hours:'8,760', price:'10,000', recovery:'0'},
     segs:[
-      {name:'A 탱크→펌프', len:'12.0', iod:'48.6', it:'2.0', ood:'114.3', ot:'3.0', mat:'SUS316L'},
-      {name:'B 펌프→디스펜서', len:'25.0', iod:'34.0', it:'1.65', ood:'89.1', ot:'3.0', mat:'SUS316L'},
-      {name:'C 리턴', len:'8.0', iod:'34.0', it:'1.65', ood:'89.1', ot:'3.0', mat:'SUS316L'}
+      {name:'A 탱크→펌프', len:'12.0', dn:'40A', iod:'48.6', it:'2.0', ood:'114.3', ot:'3.0', mat:'SUS316L'},
+      {name:'B 펌프→디스펜서', len:'25.0', dn:'25A', iod:'34.0', it:'1.65', ood:'89.1', ot:'3.0', mat:'SUS316L'},
+      {name:'C 리턴', len:'8.0', dn:'25A', iod:'34.0', it:'1.65', ood:'89.1', ot:'3.0', mat:'SUS316L'}
     ],
     ins:{method:'mli', mli:'20', vm:'1.0', ve:'-3', foamT:'50', foamK:'0.020'},
     sup:{mat:'G10', spacing:'2.0', area:'60', len:'30', kint:'109'},
@@ -57,7 +57,7 @@ function load(){
     if(raw){
       var s = JSON.parse(raw);
       ['project','op','ins','sup','ui'].forEach(function(k){ if(s[k]) d[k]=Object.assign(d[k], s[k]); });
-      if(Array.isArray(s.segs)) d.segs = s.segs;
+      if(Array.isArray(s.segs)) d.segs = s.segs.map(function(g){ if(g&&g.dn==null) g.dn='직접 입력'; return g; }); // 이전 저장값에는 호칭이 없음
       if(Array.isArray(s.parts)) d.parts = s.parts;
       d.ui.rep = Object.assign({cmp:true,pb:true,asm:true}, d.ui.rep||{});
     }
@@ -424,12 +424,15 @@ function paths(r){
 var TABS=[['input','입력'],['result','결과'],['compare','단열 비교'],['payback','회수기간'],['report','리포트']];
 function topbarHTML(){
   return '<header class="topbar"><span class="wordmark">Nexergy</span><nav class="tabs" role="tablist">'+
-    TABS.map(function(t){return '<button type="button" role="tab" class="tab'+(state.ui.tab===t[0]?' on':'')+'" data-act="tab" data-v="'+t[0]+'" aria-selected="'+(state.ui.tab===t[0])+'">'+t[1]+'</button>';}).join('')+
+    TABS.map(function(t){return '<button type="button" role="tab" class="tab'+(state.ui.tab===t[0]?' on':'')+'" data-act="tab" data-v="'+t[0]+'" aria-selected="'+(state.ui.tab===t[0])+'"><b class="tn">'+(TABS.indexOf(t)+1)+'</b>'+t[1]+'</button>';}).join('')+
     '</nav><div class="tb-right">'+calcChipHTML()+'<span class="proj" id="tb-proj" title="'+esc(state.project.name)+'">'+esc(state.project.name||'이름 없는 프로젝트')+'</span><span class="saved" id="saved-box">'+ic(STORE_OK?'check':'warn',14)+'<span id="saved-txt">'+saveLabel()+'</span></span></div></header>';
 }
+/* 설명 문장은 화면에서 뺐습니다. desc 인자는 호환을 위해 남겨 둡니다. */
 function pageHead(title,desc,actions,extra){
-  return '<div class="page-head"><div class="ph-text"><h1>'+title+'</h1><p class="desc">'+desc+'</p>'+(extra||'')+'</div><div class="actions">'+(actions||'')+'</div></div>';
+  return '<div class="page-head"><div class="ph-text"><h1>'+title+'</h1>'+(extra||'')+'</div><div class="actions">'+(actions||'')+'</div></div>';
 }
+/* (?) 도움말: 마우스를 올리거나 눌렀을 때만 보입니다 */
+function tip(t){ return '<span class="tip" tabindex="0" role="note" aria-label="'+esc(t)+'" data-tip="'+esc(t)+'">?</span>'; }
 /* 화면 아래 이전/다음 흐름 버튼 */
 function flowNav(tab){
   var i=VIEWS.indexOf(tab), prev=TABS[i-1], next=TABS[i+1];
@@ -445,7 +448,7 @@ function blocked(v){
   return '<div class="empty"><span class="badge danger">계산 멈춤</span><h2>입력에 고칠 곳이 '+v.errs.length+'개 있습니다</h2><p>아래 항목을 고치면 바로 다시 계산합니다.</p><div class="issues">'+v.list.map(issueHTML).join('')+'</div><button type="button" class="btn primary" data-act="tab" data-v="input">'+ic('edit')+'입력으로 가기</button></div>';
 }
 function patDefs(id){
-  return '<defs><pattern id="'+id+'-sup" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#D08A2E"/><rect width="2" height="6" fill="#FFFFFF" fill-opacity=".75"/></pattern><pattern id="'+id+'-gas" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#8DBBEA"/><circle cx="2.5" cy="2.5" r="1" fill="#22303F"/></pattern><pattern id="'+id+'-scb" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#7F98B6"/><rect width="2" height="6" fill="#FFFFFF" fill-opacity=".7"/></pattern><pattern id="'+id+'-foam" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#5F7C9E"/><rect width="6" height="1.5" fill="#FFFFFF" fill-opacity=".6"/></pattern></defs>';
+  return '<defs><pattern id="'+id+'-sup" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#9AA8B4"/><rect width="2" height="6" fill="#FFFFFF" fill-opacity=".75"/></pattern><pattern id="'+id+'-gas" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#7FA6CC"/><circle cx="2.5" cy="2.5" r="1" fill="#0F2740"/></pattern><pattern id="'+id+'-scb" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#7FA6CC"/><rect width="2" height="6" fill="#FFFFFF" fill-opacity=".7"/></pattern><pattern id="'+id+'-foam" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#3A5068"/><rect width="6" height="1.5" fill="#FFFFFF" fill-opacity=".6"/></pattern></defs>';
 }
 function fillFor(k,pat){ if(pat&&(k==='sup'||k==='gas'||k==='foam')) return 'url(#'+pat+'-'+k+')'; return COLORS[k]; }
 var uid=0;
@@ -485,18 +488,21 @@ function fld(o){
   return '<div class="'+cls+'" data-field="'+o.key+'"><label class="lab">'+o.label+'</label>'+ctl+'<span class="help" data-help="'+esc(o.help||'')+'" data-msg="'+o.key+'">'+(o.help||'')+'</span></div>';
 }
 function panel(g,title,sub,body,reset){
-  return '<section class="panel grp" id="grp-'+g+'"><div class="panel-head"><h2>'+title+'</h2><span class="sub">'+sub+'</span><span class="right">'+(reset?'<button type="button" class="btn ghost" data-act="reset" data-v="'+g+'">'+ic('reset')+'기본값으로 되돌리기</button>':'')+'</span></div><div class="panel-body">'+body+'</div></section>';
+  return '<section class="panel grp" id="grp-'+g+'"><div class="panel-head"><h2>'+title+'</h2>'+(sub?tip(sub):'')+'<span class="right">'+(reset?'<button type="button" class="btn ghost" data-act="reset" data-v="'+g+'">'+ic('reset')+'기본값으로 되돌리기</button>':'')+'</span></div><div class="panel-body">'+body+'</div></section>';
 }
+/* 내관 호칭 (KS D 3576). 칸 키: seg.(구간번호).dn. 외경·두께 자동 채움은 팀에서 연결 */
+var DN_LIST=[['15A','15A (DN15)'],['20A','20A (DN20)'],['25A','25A (DN25)'],['32A','32A (DN32)'],['40A','40A (DN40)'],['50A','50A (DN50)'],['65A','65A (DN65)'],['80A','80A (DN80)'],['100A','100A (DN100)'],['직접 입력','직접 입력']];
 function segTable(){
   var rows=state.segs.map(function(s,i){
     function c(f,r){return '<td><div class="cell'+(r?' r':'')+'" data-ctl="seg.'+i+'.'+f+'"><input type="text" inputmode="'+(r?'decimal':'text')+'" data-seg="'+i+'" data-f="'+f+'" value="'+esc(s[f])+'" aria-label="'+f+'"></div></td>';}
-    return '<tr>'+c('name',false)+c('len',true)+c('iod',true)+c('it',true)+c('ood',true)+c('ot',true)+
+    var dn='<td><div class="cell sel" data-ctl="seg.'+i+'.dn"><select id="seg-'+i+'-dn" data-seg="'+i+'" data-f="dn" aria-label="내관 호칭">'+DN_LIST.map(function(o){return '<option value="'+esc(o[0])+'"'+(o[0]===s.dn?' selected':'')+'>'+esc(o[1])+'</option>';}).join('')+'</select>'+ic('chev',14,1.8)+'</div></td>';
+    return '<tr>'+c('name',false)+c('len',true)+dn+c('iod',true)+c('it',true)+c('ood',true)+c('ot',true)+
       '<td><div class="cell sel"><select data-seg="'+i+'" data-f="mat" aria-label="재질">'+PIPEMATS.map(function(m){return '<option'+(m===s.mat?' selected':'')+'>'+m+'</option>';}).join('')+'</select>'+ic('chev',14,1.8)+'</div></td>'+
       '<td><span class="row-act"><button type="button" class="icon-btn" title="복제" data-act="dup-seg" data-v="'+i+'">'+ic('copy',16,1.8)+'</button><button type="button" class="icon-btn" title="삭제" data-act="del-seg" data-v="'+i+'"'+(state.segs.length<=1?' disabled':'')+'>'+ic('trash',16,1.8)+'</button></span></td></tr>';
   }).join('');
-  return '<div class="et-wrap"><table class="et"><colgroup><col style="width:24%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:15%"><col style="width:11%"></colgroup>'+
-    '<thead><tr><th rowspan="2">구간명</th><th rowspan="2" class="r">길이 <span class="hu">m</span></th><th colspan="2" class="grp-h">내관 <span class="hu">mm</span></th><th colspan="2" class="grp-h">외관 <span class="hu">mm</span></th><th rowspan="2">재질</th><th rowspan="2"></th></tr>'+
-    '<tr><th class="r sub-h">외경</th><th class="r sub-h">두께</th><th class="r sub-h">외경</th><th class="r sub-h">두께</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+  return '<div class="et-wrap"><table class="et"><colgroup><col style="width:16%"><col style="width:8%"><col style="width:16%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:14%"><col style="width:12%"></colgroup>'+
+    '<thead><tr><th rowspan="2">구간명</th><th rowspan="2" class="r">길이 <span class="hu">m</span></th><th colspan="3" class="grp-h">내관 <span class="hu">mm</span></th><th colspan="2" class="grp-h">외관 <span class="hu">mm</span></th><th rowspan="2">재질</th><th rowspan="2"></th></tr>'+
+    '<tr><th class="sub-h">호칭</th><th class="r sub-h">외경</th><th class="r sub-h">두께</th><th class="r sub-h">외경</th><th class="r sub-h">두께</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<div class="tbl-msgs" id="seg-msgs"></div>'+
     '<div class="tfoot"><button type="button" class="btn ghost" data-act="add-seg">'+ic('plus')+'구간 추가</button><span class="tsum" id="seg-sum"></span></div>';
 }
@@ -541,30 +547,53 @@ function supBody(){
 }
 function renderInput(){
   var o=state.op, pj=state.project;
-  var nav='<nav class="gindex" aria-label="입력 그룹">'+GROUPS.map(function(g,i){return '<button type="button" class="gi'+(i===0?' on':'')+'" data-act="nav" data-v="'+g[0]+'">'+g[1]+'<span class="cnt" data-cnt="'+g[0]+'" hidden></span></button>';}).join('')+'</nav>';
+  var nav='<nav class="gindex" aria-label="입력 그룹">'+GROUPS.map(function(g,i){return '<button type="button" class="gi'+(i===0?' on':'')+'" data-act="nav" data-v="'+g[0]+'"><b class="gn">'+(i+1)+'</b>'+g[1]+'<span class="cnt" data-cnt="'+g[0]+'" hidden></span></button>';}).join('')+'</nav>';
   var form='<div class="form-col">'+
-    panel('project','프로젝트','리포트 표지에 그대로 들어갑니다.','<div class="fgrid">'+
+    panel('project','프로젝트','','<div class="fgrid">'+
       fld({key:'project.name',label:'프로젝트명',value:pj.name,span2:true,text:true})+
       fld({key:'project.author',label:'작성자',value:pj.author,text:true})+
       fld({key:'project.date',label:'작성일',value:pj.date,type:'date',text:true})+
       fld({key:'project.memo',label:'메모',value:pj.memo,span2:true,text:true,placeholder:'검토 회의에서 함께 볼 메모를 남기세요'})+'</div>',false)+
-    panel('op','운전 조건','유체와 운전 환경, 손실액 계산에 쓸 단가입니다.','<div class="fgrid">'+
+    panel('op','운전 조건','','<div class="fgrid">'+
       fld({key:'op.fluid',label:'유체',value:o.fluid,select:Object.keys(FLUIDS).map(function(k){return [k,FLUIDS[k].label];})})+
       fld({key:'op.pressure',label:'운전 압력',value:o.pressure,unit:'barg'})+
       fld({key:'op.ambient',label:'외기 온도',value:o.ambient,unit:'°C'})+
       fld({key:'op.hours',label:'연간 운전시간',value:o.hours,unit:'h/년',comma:true,help:'쉬지 않고 운전하면 8,760 h입니다.'})+
       fld({key:'op.price',label:'유체 단가',value:o.price,unit:'원/kg',comma:true,help:'연간 손실액 계산에 씁니다.'})+
       fld({key:'op.recovery',label:'BOG 회수율',value:o.recovery,unit:'%',help:'0 %면 증발한 양을 모두 손실로 봅니다.'})+'</div>',true)+
-    panel('seg','배관 구간','구간마다 길이와 내관·외관 규격을 넣습니다.',segTable(),true)+
-    panel('ins','단열 구성','방식에 따라 입력 칸이 바뀝니다.',insBody(),true)+
+    panel('seg','배관 구간','내관 호칭(KS D 3576)을 고르고, 외경·두께는 직접 고칠 수 있습니다.',segTable(),true)+
+    panel('ins','단열 구성','',insBody(),true)+
     panel('sup','지지대','내관을 받치는 부품으로, 진공층을 가로질러 열이 새는 길입니다.',supBody(),true)+
     panel('parts','부품','개당 열유입은 제조사 사양값을 넣으세요.',partTable(),true)+'</div>';
   var rail='<aside class="rail" id="rail" aria-live="polite"></aside>';
-  document.getElementById('view-input').innerHTML='<main class="page">'+pageHead('배관 사양','모든 칸은 기본값으로 채워져 있습니다. 값을 바꾸면 오른쪽 요약이 바로 다시 계산됩니다.')+'<div class="input-layout">'+nav+form+rail+'</div>'+flowNav('input')+'</main>';
+  document.getElementById('view-input').innerHTML='<main class="page">'+pageHead('배관 사양','')+'<div class="input-layout">'+nav+form+rail+'</div>'+flowNav('input')+'</main>';
   updateInput();
 }
+/* 입력 화면 단면 그림 (단열 방식 3가지). id: sec-jacket, sec-vac, sec-mli, sec-foam, sec-pipe, sec-sup */
+function sectionSVG(){
+  var m=state.ins.method, cx=86, cy=92, W=288, H=184, s='<svg id="section" class="chart sec" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="배관 단면: '+(m==='foam'?'폼 단열':m==='vac'?'진공만':'진공+MLI')+'">';
+  var lab=[], P=function(r){return [Math.round(cx+r*0.819), Math.round(cy-r*0.574)];};
+  if(m==='foam'){
+    s+='<circle id="sec-foam" cx="'+cx+'" cy="'+cy+'" r="78" fill="#E4E8EC" stroke="#9AA8B4" stroke-width="1.5"/>';
+    for(var k=0;k<4;k++) s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(48+k*8)+'" fill="none" stroke="#C7CFD7" stroke-dasharray="3 3"/>';
+    lab.push(P(62).concat(['폼 '+(state.ins.foamT||'–')+' mm']));
+  } else {
+    s+='<circle id="sec-jacket" cx="'+cx+'" cy="'+cy+'" r="86" fill="#9AA8B4"/><circle id="sec-vac" cx="'+cx+'" cy="'+cy+'" r="81" fill="#FFFFFF"/>';
+    if(m==='mli'){ s+='<g id="sec-mli">'; for(var j=0;j<5;j++) s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(44+j*3.5)+'" fill="none" stroke="#1E4F80" stroke-opacity="'+(0.4+j*0.12).toFixed(2)+'"/>'; s+='</g>'; }
+    s+='<rect id="sec-sup" x="'+(cx-7)+'" y="'+(cy+36)+'" width="14" height="46" fill="#C9B27A"/>';
+    lab.push(P(84).concat(['외관'])); lab.push(P(70).concat(['진공층 '+sciP(num(state.ins.vm),num(state.ins.ve))]));
+    if(m==='mli') lab.push(P(50).concat(['MLI '+(state.ins.mli||'–')+'층']));
+    lab.push([cx+4,cy+70,'지지대 '+state.sup.mat]);
+  }
+  s+='<circle id="sec-pipe" cx="'+cx+'" cy="'+cy+'" r="36" fill="#9AA8B4"/><circle cx="'+cx+'" cy="'+cy+'" r="32" fill="#CFE2F2"/><text x="'+cx+'" y="'+(cy+5)+'" text-anchor="middle" class="sec-fluid">'+esc((FLUIDS[state.op.fluid]||{short:''}).short)+'</text>';
+  lab.push(P(34).concat(['내관']));
+  lab.sort(function(a,b){return a[1]-b[1];});
+  var ty=18, step=(H-30)/Math.max(1,lab.length-1);
+  lab.forEach(function(l,i){ var yy=Math.round(ty+i*step); s+='<circle cx="'+l[0]+'" cy="'+l[1]+'" r="2.5" fill="#0F2740"/><polyline points="'+l[0]+','+l[1]+' 178,'+yy+' 184,'+yy+'" fill="none" stroke="#6B7C8C" stroke-width="1"/><text x="188" y="'+(yy+4)+'" class="sec-lab">'+esc(l[2])+'</text>'; });
+  return s+'</svg>';
+}
 function railHTML(v,r){
-  var h='<div class="rail-head"><h2>요약</h2>'+(v.ok?'<span class="status">'+ic('check',14)+'방금 계산함</span>':'<span class="badge danger">계산 멈춤</span>')+'</div>';
+  var h='<div class="rail-sec">'+sectionSVG()+'</div><div class="rail-head"><h2>요약</h2>'+(v.ok?'<span class="status">'+ic('check',14)+'방금 계산함</span>':'<span class="badge danger">계산 멈춤</span>')+'</div>';
   if(!v.ok){
     h+='<p class="rail-lead">아래 '+v.errs.length+'개를 고치면 바로 다시 계산합니다.</p><div class="issues">'+v.list.map(issueHTML).join('')+'</div>';
     h+=['총 열유입','증발량 BOG','연간 손실액'].map(function(k){return '<div class="rk off"><span class="k">'+k+'</span><span class="v">–</span></div>';}).join('');
@@ -621,10 +650,10 @@ function netBig(r){
   var rows=foam?[[byK.foam,110,false],[byK.parts,250,false]]:[[byK.rad,70,true],[byK.gas,134,true],[byK.sup,222,false],[byK.parts,290,false]];
   var maxQ=Math.max.apply(null,ps.map(function(p){return p.Q;}))||1;
   var s='<svg class="chart net" width="1310" height="340" viewBox="0 0 1310 340" role="img" aria-label="열저항망: 외기 '+r.p.Ta+'도에서 '+fW(r.Q)+' W가 '+r.p.fluid.short+'로 들어와 하루 '+fs3(r.bogDay)+' kg 증발">';
-  s+='<rect x="0" y="130" width="124" height="100" rx="10" fill="#FBF2E4" stroke="#E3B679"/><text x="18" y="164" class="nlab heat">외기</text><text x="18" y="194" class="nval">'+r.p.Ta+' °C</text><text x="18" y="216" class="nsub">ΔT '+Math.round(r.dT)+' K</text>';
+  s+='<rect x="0" y="130" width="124" height="100" rx="3" fill="#FBF4EC" stroke="#F0B27A"/><text x="18" y="164" class="nlab heat">외기</text><text x="18" y="194" class="nval">'+r.p.Ta+' °C</text><text x="18" y="216" class="nsub">ΔT '+Math.round(r.dT)+' K</text>';
   var y0=rows[0][1], y1=rows[rows.length-1][1];
-  s+='<line x1="124" y1="180" x2="160" y2="180" stroke="#5F6B76" stroke-width="2"/><line x1="160" y1="'+y0+'" x2="160" y2="'+y1+'" stroke="#5F6B76" stroke-width="2"/><line x1="640" y1="'+y0+'" x2="640" y2="'+y1+'" stroke="#5F6B76" stroke-width="2"/><line x1="640" y1="180" x2="676" y2="180" stroke="#5F6B76" stroke-width="2"/>';
-  if(!foam) s+='<rect x="174" y="26" width="452" height="142" rx="10" fill="none" stroke="#AEB9C4" stroke-dasharray="5 4"/><rect x="188" y="18" width="150" height="16" fill="#FFFFFF"/><text x="194" y="30" class="glab">진공층: 두 경로가 나란히</text>';
+  s+='<line x1="124" y1="180" x2="160" y2="180" stroke="#6B7C8C" stroke-width="2"/><line x1="160" y1="'+y0+'" x2="160" y2="'+y1+'" stroke="#6B7C8C" stroke-width="2"/><line x1="640" y1="'+y0+'" x2="640" y2="'+y1+'" stroke="#6B7C8C" stroke-width="2"/><line x1="640" y1="180" x2="676" y2="180" stroke="#6B7C8C" stroke-width="2"/>';
+  if(!foam) s+='<rect x="174" y="26" width="452" height="142" rx="3" fill="none" stroke="#9AA8B4" stroke-dasharray="5 4"/><rect x="188" y="18" width="150" height="16" fill="#FFFFFF"/><text x="194" y="30" class="glab">진공층: 두 경로가 나란히</text>';
   rows.forEach(function(row){
     var p=row[0], y=row[1], sw=Math.max(1.6,11*p.Q/maxQ), R=p.Q>0?r.dT/p.Q:Infinity;
     s+='<line x1="160" y1="'+y+'" x2="640" y2="'+y+'" stroke="'+p.color+'" stroke-width="'+sw.toFixed(1)+'"/>';
@@ -635,11 +664,11 @@ function netBig(r){
     if(sw>=6){ s+='<path d="M219,'+(y-5)+' L227,'+y+' L219,'+(y+5)+'" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/><path d="M561,'+(y-5)+' L569,'+y+' L561,'+(y+5)+'" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>'; }
   });
   var m=moneyParts(r.loss);
-  s+='<rect x="676" y="124" width="160" height="112" rx="10" fill="#E8F0FA" stroke="#A9C6EA"/><text x="694" y="156" class="nlab cold">'+r.p.fluid.short+'</text><text x="694" y="184" class="nval">'+(r.p.Tf<0?'−'+Math.abs(r.p.Tf):r.p.Tf)+' °C</text><line x1="694" y1="196" x2="818" y2="196" stroke="#A9C6EA"/><text x="694" y="220" class="nsum">합계 '+fW(r.Q)+' W</text>';
-  s+='<line x1="836" y1="180" x2="914" y2="180" stroke="#5F6B76" stroke-width="2"/><path d="M912,174 L922,180 L912,186 z" fill="#5F6B76"/><text x="879" y="206" text-anchor="middle" class="conv">÷ 증발잠열</text><text x="879" y="224" text-anchor="middle" class="conv b">'+r.p.latent+' kJ/kg</text>';
-  s+='<rect x="922" y="124" width="150" height="112" rx="10" fill="#FFFFFF" stroke="#C6CED6"/><text x="938" y="156" class="nlab">증발량 BOG</text><text x="938" y="184" class="nval">'+fs3(r.bogDay)+' kg/일</text><text x="938" y="220" class="nsub">연 '+fs3(r.bogYr)+' kg</text>';
-  s+='<line x1="1072" y1="180" x2="1151" y2="180" stroke="#5F6B76" stroke-width="2"/><path d="M1149,174 L1159,180 L1149,186 z" fill="#5F6B76"/><text x="1115.5" y="206" text-anchor="middle" class="conv">× 단가'+(r.p.rec>0?' × (1−회수율)':'')+'</text><text x="1115.5" y="224" text-anchor="middle" class="conv b">'+comma(r.p.price)+'원/kg</text>';
-  s+='<rect x="1159" y="124" width="150" height="112" rx="10" fill="#FFFFFF" stroke="#16202A" stroke-width="1.5"/><text x="1175" y="156" class="nlab">연간 손실액</text><text x="1175" y="184" class="nval">'+m.v+m.u+'</text><text x="1175" y="220" class="nsub">'+fWonFull(r.loss)+'</text>';
+  s+='<rect x="676" y="124" width="160" height="112" rx="3" fill="#E6F0F7" stroke="#7FA6CC"/><text x="694" y="156" class="nlab cold">'+r.p.fluid.short+'</text><text x="694" y="184" class="nval">'+(r.p.Tf<0?'−'+Math.abs(r.p.Tf):r.p.Tf)+' °C</text><line x1="694" y1="196" x2="818" y2="196" stroke="#7FA6CC"/><text x="694" y="220" class="nsum">합계 '+fW(r.Q)+' W</text>';
+  s+='<line x1="836" y1="180" x2="914" y2="180" stroke="#6B7C8C" stroke-width="2"/><path d="M912,174 L922,180 L912,186 z" fill="#5F6B76"/><text x="879" y="206" text-anchor="middle" class="conv">÷ 증발잠열</text><text x="879" y="224" text-anchor="middle" class="conv b">'+r.p.latent+' kJ/kg</text>';
+  s+='<rect x="922" y="124" width="150" height="112" rx="3" fill="#FFFFFF" stroke="#BCC8D3"/><text x="938" y="156" class="nlab">증발량 BOG</text><text x="938" y="184" class="nval">'+fs3(r.bogDay)+' kg/일</text><text x="938" y="220" class="nsub">연 '+fs3(r.bogYr)+' kg</text>';
+  s+='<line x1="1072" y1="180" x2="1151" y2="180" stroke="#6B7C8C" stroke-width="2"/><path d="M1149,174 L1159,180 L1149,186 z" fill="#5F6B76"/><text x="1115.5" y="206" text-anchor="middle" class="conv">× 단가'+(r.p.rec>0?' × (1−회수율)':'')+'</text><text x="1115.5" y="224" text-anchor="middle" class="conv b">'+comma(r.p.price)+'원/kg</text>';
+  s+='<rect x="1159" y="124" width="150" height="112" rx="3" fill="#FFFFFF" stroke="#0F2740" stroke-width="1.5"/><text x="1175" y="156" class="nlab">연간 손실액</text><text x="1175" y="184" class="nval">'+m.v+m.u+'</text><text x="1175" y="220" class="nsub">'+fWonFull(r.loss)+'</text>';
   return s+'</svg>';
 }
 function assumeItems(r){
@@ -655,25 +684,88 @@ function chipsHTML(r){
   c.push('부품 '+r.partQty+'개');
   return '<div class="chips">'+c.map(function(x){return '<span class="chip">'+esc(x)+'</span>';}).join('')+'</div>';
 }
+/* 배관 단면 위 열유입 경로 그림. 화살표 굵기는 경로별 열유입 비율에 비례합니다.
+   id: heatpath / arrow-{parts,rad,sup,gas,foam} / val-{...} (W 값) / pct-{...} (비중) */
+var HEAT='#D9731F', HEAT2='#F0B27A';
+function heatPath(r,opt){
+  opt=opt||{};
+  var p=r.p, ps=paths(r), by={}; ps.forEach(function(x){by[x.k]=x;});
+  var m=p.method, W=600, H=400, cx=300, cy=200, maxQ=Math.max.apply(null,ps.map(function(x){return x.Q;}))||1;
+  /* 가운데 온도: 계산 결과의 포화온도 Tsat_K(켈빈, 소수 첫째 자리). 값이 없으면 °C */
+  var Tf=isFinite(p.Tsat_K)?Number(p.Tsat_K).toFixed(1)+' K':(p.Tf<0?'−'+Math.abs(p.Tf):p.Tf)+' °C';
+  var s='<svg id="'+(opt.id||'heatpath')+'" class="chart heat" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="배관 단면 열유입 경로: '+ps.map(function(x){return x.name+' '+fW(x.Q)+' W ('+fPct(x.pct)+')';}).join(', ')+'">';
+  s+='<rect width="'+W+'" height="'+H+'" fill="#FBF4EC"/>';
+  s+='<text x="16" y="'+(H-16)+'" class="hp-zone">외기 '+p.Ta+' °C</text>';
+  if(m==='foam'){
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="132" fill="#E4E8EC" stroke="#9AA8B4" stroke-width="1.5"/>';
+    for(var k=0;k<5;k++) s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(78+k*12)+'" fill="none" stroke="#C7CFD7" stroke-width="1" stroke-dasharray="3 4"/>';
+    s+='<text x="'+cx+'" y="'+(cy-104)+'" text-anchor="middle" class="hp-layer">폼 '+fLen(p.foamT*1000)+' mm</text>';
+  } else {
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="150" fill="#9AA8B4"/><circle cx="'+cx+'" cy="'+cy+'" r="142" fill="#FFFFFF"/>';
+    s+='<text x="'+cx+'" y="'+(cy-121)+'" text-anchor="middle" class="hp-layer">진공층 '+sciOf(p.P)+'</text>';
+    if(m==='mli'){ for(var j=0;j<6;j++) s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(76+j*4)+'" fill="none" stroke="#1E4F80" stroke-width="1" stroke-opacity="'+(0.35+j*0.1).toFixed(2)+'"/>';
+      s+='<text x="'+cx+'" y="'+(cy-101)+'" text-anchor="middle" class="hp-layer cold">MLI '+p.N+'층</text>'; }
+    // 지지대 (내관 아래 → 외관)
+    s+='<rect x="'+(cx-12)+'" y="'+(cy+62)+'" width="24" height="80" fill="#C9B27A"/><text x="'+(cx-20)+'" y="'+(cy+104)+'" text-anchor="end" class="hp-layer">지지대 '+esc(p.supMat)+'</text>';
+    s+='<text x="'+(cx-112)+'" y="'+(cy+128)+'" class="hp-layer" text-anchor="end">외관</text>';
+  }
+  s+='<circle cx="'+cx+'" cy="'+cy+'" r="62" fill="#9AA8B4"/><circle cx="'+cx+'" cy="'+cy+'" r="56" fill="#CFE2F2"/>';
+  s+='<text x="'+cx+'" y="'+(cy-4)+'" text-anchor="middle" class="hp-fluid">'+p.fluid.short+'</text><text x="'+cx+'" y="'+(cy+18)+'" text-anchor="middle" class="hp-fluid-t" id="val-tsat">'+Tf+'</text>';
+  // 화살표 배치: [시작x, 시작y, 끝x, 끝y, 라벨x, 라벨y, 정렬]
+  var L={
+    rad:  [150,58, cx-46,cy-46, 140,40,'end'],
+    gas:  [450,58, cx+46,cy-46, 460,40,'start'],
+    parts:[540,cy, cx+64,cy, 548,cy-34,'end2'],
+    sup:  [cx+30,H-6, cx+30,cy+64, cx+42,H-44,'start'],
+    foam: [150,58, cx-46,cy-46, 140,40,'end']
+  };
+  if(m==='foam') L.parts=[540,cy, cx+64,cy, 548,cy-34,'end2'];
+  var order=m==='foam'?['foam','parts']:['rad','gas','sup','parts'];
+  order.forEach(function(k){
+    var x=by[k]; if(!x) return; var g=L[k];
+    var sw=Math.max(1.5,14*x.Q/maxQ), col=x.pct<5?HEAT2:HEAT;
+    var dx=g[2]-g[0], dy=g[3]-g[1], len=Math.sqrt(dx*dx+dy*dy), ux=dx/len, uy=dy/len, hl=Math.max(10,sw*1.9), hw=Math.max(7,sw*1.5);
+    var bx=g[2]-ux*hl, by2=g[3]-uy*hl;
+    s+='<g id="arrow-'+k+'" class="hp-arrow" data-k="'+k+'" data-w="'+x.Q.toFixed(3)+'"><line x1="'+g[0]+'" y1="'+g[1]+'" x2="'+bx.toFixed(1)+'" y2="'+by2.toFixed(1)+'" stroke="'+col+'" stroke-width="'+sw.toFixed(1)+'" stroke-linecap="butt"/>'+
+      '<path d="M'+g[2]+','+g[3]+' L'+(bx-uy*hw).toFixed(1)+','+(by2+ux*hw).toFixed(1)+' L'+(bx+uy*hw).toFixed(1)+','+(by2-ux*hw).toFixed(1)+' z" fill="'+col+'"/></g>';
+    var anc=g[6]==='end2'?'end':g[6], lx=g[6]==='end2'?592:g[4];
+    s+='<text x="'+lx+'" y="'+g[5]+'" text-anchor="'+anc+'" class="hp-name">'+(k==='gas'?'잔류가스':x.name)+'</text>'+
+       '<text x="'+lx+'" y="'+(g[5]+20)+'" text-anchor="'+anc+'" class="hp-val"><tspan id="val-'+k+'">'+fW(x.Q)+'</tspan><tspan class="hp-u"> W</tspan><tspan id="pct-'+k+'" class="hp-pct" dx="6">'+fPct(x.pct)+'</tspan></text>';
+  });
+  return s+'</svg>';
+}
+function heatLegend(r){
+  var ps=paths(r), mx=Math.max.apply(null,ps.map(function(q){return q.Q;}))||1;
+  return '<table class="dt hl"><colgroup><col style="width:30%"><col><col style="width:18%"><col style="width:16%"></colgroup><thead><tr><th>경로</th><th>조건</th><th class="r">열유입 <span class="hu">W</span></th><th class="r">비중</th></tr></thead><tbody>'+
+    ps.map(function(p){return '<tr data-k="'+p.k+'"><td><span class="hl-name"><i style="height:'+Math.max(2,Math.round(Math.max(1.5,14*p.Q/mx)/1.6))+'px;background:'+(p.pct<5?HEAT2:HEAT)+'"></i><b>'+(p.k==='gas'?'잔류가스 전도':p.name)+'</b></span></td><td class="det">'+esc(p.detLong)+'</td><td class="r num">'+fW(p.Q)+'</td><td class="r num">'+fPct(p.pct)+'</td></tr>';}).join('')+
+    '</tbody><tfoot><tr><td>합계</td><td></td><td class="r num">'+fW(r.Q)+'</td><td class="r num">100.0 %</td></tr></tfoot></table>';
+}
 function renderResult(animCalc){
   var el=document.getElementById('view-result'), v=validate(state);
-  var head=pageHead('분석 결과','열이 어디로 얼마나 들어오고, 그 열로 매년 얼마를 잃는지 보여 줍니다.',
+  var head=pageHead('분석 결과','',
     '<button type="button" class="btn" data-act="tab" data-v="input">'+ic('edit')+'입력 수정</button><button type="button" class="btn" data-act="tab" data-v="compare">'+ic('plus')+'비교에 추가</button><button type="button" class="btn primary" data-act="tab" data-v="report">'+ic('doc')+'리포트 출력</button>',
     v.ok?chipsHTML(core(params(state))):'');
   if(!v.ok){ el.innerHTML='<main class="page">'+head+blocked(v)+flowNav('result')+'</main>'; return; }
-  var r=core(params(state)), ps=paths(r), m=moneyParts(r.loss), rows=itemRows(r);
-  var h='<section class="kpis">'+
-    '<div class="kpi"><span class="k">총 열유입</span><span class="v">'+fW(r.Q)+'<span class="u">W</span></span><span class="s">배관 '+r.L.toFixed(1)+' m와 부품 '+r.partQty+'개</span></div>'+
-    '<div class="kpi"><span class="k">단위 길이당 열유입</span><span class="v">'+fWm(r.perM)+'<span class="u">W/m</span></span><span class="s">총 열유입 ÷ 배관 길이</span></div>'+
-    '<div class="kpi"><span class="k">증발량 BOG</span><span class="v">'+fs3(r.bogDay)+'<span class="u">kg/일</span></span><span class="s">연 '+fs3(r.bogYr)+' kg</span></div>'+
-    '<div class="kpi"><span class="k">연간 손실액</span><span class="v">'+m.v+'<span class="u">'+m.u+'/년</span></span><span class="s">단가 '+comma(r.p.price)+'원/kg, 회수율 '+r.p.rec+' %</span></div></section>';
-  h+='<div class="result-grid"><section class="panel"><div class="panel-head"><h2>열유입 구성</h2><span class="right total">합계 <b>'+fW(r.Q)+' W</b></span></div><div class="panel-body">'+stackBar(ps,526,28,4)+compTable(ps,'dt comp')+'</div></section>';
-  h+='<section class="panel"><div class="panel-head"><h2>구간·부품별 결과</h2><span class="right sortby">'+ic('sort',16,1.8)+'열유입 큰 순</span></div><div class="panel-body tight"><div class="dt-wrap"><table class="dt res"><colgroup><col style="width:26%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:10%"><col style="width:13%"><col style="width:19%"></colgroup>'+
-    '<thead><tr><th>이름</th><th>구분</th><th class="r">길이·수량</th><th class="r">열유입 W</th><th class="r">W/m</th><th class="r">BOG kg/년</th><th>비중</th></tr></thead><tbody>'+
-    rows.map(function(x){return '<tr><td>'+esc(x.name)+'</td><td class="kind">'+x.kind+'</td><td class="r">'+x.amt+'</td><td class="r strong">'+fW(x.Q)+'</td><td class="r">'+(isFinite(x.perM)?fWm(x.perM):'<span class="na" title="부품은 길이가 없어 W/m을 내지 않습니다">–</span>')+'</td><td class="r">'+fs3(x.bog)+'</td><td><span class="share"><span class="bar"><i style="width:'+x.bar.toFixed(1)+'%"></i></span><span class="pct">'+fPct(x.share)+'</span></span></td></tr>';}).join('')+
-    '</tbody><tfoot><tr><td>합계</td><td></td><td class="r">'+fLen(r.L)+' m, '+r.partQty+'개</td><td class="r">'+fW(r.Q)+'</td><td class="r">'+fWm(r.perM)+'</td><td class="r">'+fs3(r.bogYr)+'</td><td></td></tr></tfoot></table></div></div></section></div>';
+  var r=core(params(state)), m=moneyParts(r.loss), rows=itemRows(r);
+  // 1) 첫 줄: 연간 손실액
+  var hero='<section class="panel hero" id="res-hero"><div class="hero-main"><span class="hk">연간 손실액</span>'+
+    '<p class="hv"><b id="val-loss">'+m.v+'</b><span class="hu2">'+m.u+' / 년</span></p>'+
+    '<p class="hs">단가 '+comma(r.p.price)+'원/kg · 회수율 '+r.p.rec+' % · 연간 운전 '+comma(r.p.hours)+' h</p></div>'+
+    '<table class="kv"><tbody>'+
+    '<tr><th>총 열유입</th><td class="num"><b id="val-q">'+fW(r.Q)+'</b><span class="hu">W</span></td><th>단위 길이당</th><td class="num"><b id="val-perm">'+fWm(r.perM)+'</b><span class="hu">W/m</span></td></tr>'+
+    '<tr><th>증발량</th><td class="num"><b id="val-bogday">'+fs3(r.bogDay)+'</b><span class="hu">kg/일</span></td><th>연간 증발량</th><td class="num"><b id="val-bogyr">'+fs3(r.bogYr)+'</b><span class="hu">kg/년</span></td></tr>'+
+    '</tbody></table></section>';
+  // 2) 구간·부품별 표
+  var tbl='<section class="panel"><div class="panel-head"><h2>구간·부품별 결과</h2><span class="right sortby">'+ic('sort',16,1.8)+'열유입 큰 순</span></div><div class="panel-body tight"><div class="dt-wrap"><table class="dt res"><colgroup><col style="width:34%"><col style="width:14%"><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:12%"></colgroup>'+
+    '<thead><tr><th>구간·부품</th><th class="r">길이·수량</th><th class="r">열유입 <span class="hu">W</span></th><th class="r">W/m</th><th class="r">BOG <span class="hu">kg/년</span></th><th class="r">비중</th></tr></thead><tbody>'+
+    rows.map(function(x){return '<tr><td><span class="tag'+(x.kind==='부품'?' part':'')+'">'+x.kind+'</span>'+esc(x.name)+'</td><td class="r num">'+x.amt+'</td><td class="r num strong">'+fW(x.Q)+'</td><td class="r num">'+(isFinite(x.perM)?fWm(x.perM):'<span class="na" title="부품은 길이가 없어 W/m을 내지 않습니다">–</span>')+'</td><td class="r num">'+fs3(x.bog)+'</td><td class="r num">'+fPct(x.share)+'</td></tr>';}).join('')+
+    '</tbody><tfoot><tr><td>합계</td><td class="r num">'+fLen(r.L)+' m, '+r.partQty+'개</td><td class="r num">'+fW(r.Q)+'</td><td class="r num">'+fWm(r.perM)+'</td><td class="r num">'+fs3(r.bogYr)+'</td><td class="r num">100.0 %</td></tr></tfoot></table></div></div></section>';
+  // 3) 열이 들어오는 길
+  var path='<section class="panel" id="res-heat"><div class="panel-head"><h2>열이 들어오는 길</h2>'+tip('배관 단면에서 열이 들어오는 경로입니다. 화살표가 굵을수록 열이 많이 들어옵니다.')+'<span class="right total">합계 <b>'+fW(r.Q)+' W</b></span></div>'+
+    '<div class="panel-body heat-body"><div class="heat-fig">'+heatPath(r)+'</div>'+heatLegend(r)+'</div></section>';
+  var h='<div class="result-grid"><div class="res-left">'+hero+tbl+'</div>'+path+'</div>';
   var open=state.ui.calcOpen;
-  h+='<section class="panel calc'+(open?' open':'')+'" id="calc"><div class="calc-toggle" data-act="calc" role="button" tabindex="0" aria-expanded="'+open+'" aria-controls="calc-body">'+ic('right',18)+'<b>계산 과정 '+(open?'접기':'보기')+'</b><span>열이 들어오는 경로를 열저항망 그림과 계산 가정으로 펼쳐 봅니다.</span></div>'+
+  h+='<section class="panel calc'+(open?' open':'')+'" id="calc"><div class="calc-toggle" data-act="calc" role="button" tabindex="0" aria-expanded="'+open+'" aria-controls="calc-body">'+ic('right',18)+'<b>계산 과정 '+(open?'접기':'보기')+'</b></div>'+
     '<div class="calc-body'+(open&&animCalc?' anim':'')+'" id="calc-body"'+(open?'':' hidden')+'><div class="chart-wrap">'+netBig(r)+'</div><div class="calc-foot"><div class="howto"><h3>읽는 법</h3><p>온도차는 전압, 열유입(W)은 전류, 단열층은 저항처럼 그렸습니다. 선이 굵을수록 열이 많이 들어오는 경로이고, R은 그 경로의 등가 열저항입니다.</p></div>'+
     '<div class="assume"><h3>계산 가정</h3><dl>'+assumeItems(r).map(function(a){return '<div><dt>'+a[0]+'</dt><dd>'+esc(a[1])+'</dd></div>';}).join('')+'</dl></div></div></div></section>';
   el.innerHTML='<main class="page">'+head+h+disclaimer()+flowNav('result')+'</main>';
@@ -699,7 +791,7 @@ function cmpCards(sc){
   return ['A','B','C'].map(function(k){
     var r=sc[k], isB=k===base, red=(r.Q-bq)/bq*100;
     return '<div class="sc'+(isB?' is-base':'')+'"><div class="sc-head">'+tile(k)+'<h3>'+esc(r.title)+'</h3>'+(isB?'<span class="badge neutral">기준안</span>':'<span class="badge accent">'+fRed(red)+'</span>')+'<span class="sc-more">'+(isB?'':'<button type="button" class="mk-base" data-act="base" data-v="'+k+'">기준안으로</button>')+'</span></div>'+
-      '<p class="sc-diff">'+esc(r.desc)+'</p><dl class="sc-m"><div><dt>열유입</dt><dd><b>'+fW(r.Q)+'</b> W</dd></div><div><dt>증발량 BOG</dt><dd>'+fs3(r.bogYr)+' kg/년</dd></div><div><dt>손실액</dt><dd>'+fMoney(r.loss)+'/년</dd></div></dl></div>';
+      '<p class="sc-diff">'+esc(r.desc)+'</p><div class="sc-loss"><span class="k">연간 손실액</span><p><b id="val-loss-'+k+'">'+moneyParts(r.loss).v+'</b><span class="u">'+moneyParts(r.loss).u+' / 년</span></p></div><dl class="sc-m"><div><dt>열유입</dt><dd><b class="s">'+fW(r.Q)+'</b><span class="u">W</span></dd></div><div><dt>증발량 BOG</dt><dd>'+fs3(r.bogYr)+'<span class="u">kg/년</span></dd></div></dl></div>';
   }).join('');
 }
 function cmpBars(sc){
@@ -738,11 +830,11 @@ function sensChart(sc){
   if(xl>x0&&xl<x1) s+='<line x1="'+xl.toFixed(1)+'" y1="'+yT+'" x2="'+xl.toFixed(1)+'" y2="'+yB+'" stroke="#C7922F" stroke-width="1.5" stroke-dasharray="4 4"/><text x="'+(xl+8).toFixed(1)+'" y="32" class="note warn">기준값 '+sciOf(CFG.VAC_LIMIT)+'보다 나쁘면 주의</text>';
   var ya=yf(A); s+='<line x1="'+x0+'" y1="'+ya.toFixed(1)+'" x2="'+x1+'" y2="'+ya.toFixed(1)+'" stroke="#97A3AF" stroke-width="2" stroke-dasharray="2 4" stroke-linecap="round"/><text x="60" y="'+(ya-8).toFixed(1)+'" class="note">A 폼 단열 '+fW(A)+' W (진공과 무관)</text>';
   function line(c,stroke,w,dash){ return '<path d="'+c.map(function(v,j){return (j?'L':'M')+xf(pts[j]).toFixed(1)+','+yf(v).toFixed(1);}).join(' ')+'" fill="none" stroke="'+stroke+'" stroke-width="'+w+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+' stroke-linejoin="round"/>'; }
-  s+=line(cB,'#5F7C9E',2.5,'7 5')+line(cC,'#1E63B5',3);
+  s+=line(cB,'#7FA6CC',2.5,'7 5')+line(cC,'#0F2740',3);
   var cp=Math.min(Math.max(curP,1e-4),1e2), cx=xf(cp);
   var qB=core(Object.assign({},pB,{P:cp})).Q, qC=core(Object.assign({},pC,{P:cp})).Q, yb=yf(qB), yc=yf(qC);
-  s+='<circle cx="'+cx.toFixed(1)+'" cy="'+yb.toFixed(1)+'" r="5.5" fill="#5F7C9E" stroke="#fff" stroke-width="2"/>';
-  s+='<circle cx="'+cx.toFixed(1)+'" cy="'+yc.toFixed(1)+'" r="6.5" fill="#1E63B5" stroke="#fff" stroke-width="2"/>';
+  s+='<circle cx="'+cx.toFixed(1)+'" cy="'+yb.toFixed(1)+'" r="5.5" fill="#7FA6CC" stroke="#fff" stroke-width="2"/>';
+  s+='<circle cx="'+cx.toFixed(1)+'" cy="'+yc.toFixed(1)+'" r="6.5" fill="#D9731F" stroke="#fff" stroke-width="2"/>';
   var lbx=Math.min(Math.max(cx,110),x1-70);
   if(Math.abs(yb-yc)>24) s+='<text x="'+(cx+10).toFixed(1)+'" y="'+(yb-10).toFixed(1)+'" class="note">B '+fW(qB)+' W</text>';
   var ly=yc+26>yB-6?yc-30:yc+26;
@@ -763,8 +855,8 @@ function renderCompare(){
   } else sl='<p class="help">현재 입력이 폼 단열이라 조정할 진공층 값이 없습니다. 입력에서 단열 방식을 바꾸면 여기서 조정할 수 있습니다.</p>';
   var h='<div class="scen" id="cmp-cards">'+cmpCards(sc)+'</div><div class="compare-grid"><div class="cmp-left">'+
     '<section class="panel"><div class="panel-head"><h2>안별 비교</h2></div><div class="panel-body" id="cmp-bars">'+cmpBars(sc)+'</div></section>'+
-    '<section class="panel"><div class="panel-head"><h2>C안 조정</h2><span class="sub">끌면 카드와 그래프가 바로 바뀝니다. 입력값에도 반영됩니다.</span></div><div class="panel-body stack">'+sl+'</div></section></div>'+
-    '<section class="panel"><div class="panel-head"><h2>진공도 민감도</h2><span class="sub">진공이 나빠지면 열유입이 얼마나 뛰는지</span><span class="right switch" data-act="logy" role="switch" tabindex="0" aria-checked="'+state.ui.logY+'"><span class="tog'+(state.ui.logY?' on':'')+'"><span class="knob"></span></span>세로축 로그</span></div>'+
+    '<section class="panel"><div class="panel-head"><h2>C안 조정</h2>'+tip('끌면 카드와 그래프가 바로 바뀝니다. 입력값에도 반영됩니다.')+'</div><div class="panel-body stack">'+sl+'</div></section></div>'+
+    '<section class="panel"><div class="panel-head"><h2>진공도 민감도</h2>'+tip('진공이 나빠지면 열유입이 얼마나 늘어나는지 보여 줍니다.')+'<span class="right switch" data-act="logy" role="switch" tabindex="0" aria-checked="'+state.ui.logY+'"><span class="tog'+(state.ui.logY?' on':'')+'"><span class="knob"></span></span>세로축 로그</span></div>'+
     '<div class="panel-body"><div class="legend"><span><i class="ln a"></i>A 폼 단열</span><span><i class="ln b"></i>B 진공만</span><span><i class="ln c"></i>C '+esc(sc.C.title)+'</span><span><i class="dot"></i>현재 설계</span><span><i class="ln t"></i>기준값</span></div><div id="cmp-chart">'+sensChart(sc)+'</div></div></section></div>';
   el.innerHTML='<main class="page">'+head+h+disclaimer()+flowNav('compare')+'</main>';
   syncRanges(el);
@@ -801,13 +893,13 @@ function cumChart(pb,small){
   var tickStep=horizon<=2?0.5:horizon<=6?1:Math.ceil(horizon/5);
   for(var t=0;t<=horizon+1e-9;t+=tickStep){ var lab=t===0?'0':(t<1?Math.round(t*12)+'개월':(Math.abs(t-Math.round(t))<1e-9?Math.round(t)+'년':Math.floor(t)+'년 '+Math.round((t-Math.floor(t))*12)+'개월')); s+='<text x="'+xf(t).toFixed(1)+'" y="'+(small?135:278)+'" text-anchor="'+(t===0?'start':t>=horizon-1e-9?'end':'middle')+'" class="tick'+cls+'">'+lab+'</text>'; }
   var yi=yf(invM);
-  s+='<line x1="'+x0+'" y1="'+yi.toFixed(1)+'" x2="'+x1+'" y2="'+yi.toFixed(1)+'" stroke="#C47F21" stroke-width="2" stroke-dasharray="6 4"/>';
-  s+='<line x1="'+x0+'" y1="'+yB+'" x2="'+x1+'" y2="'+yf(endM).toFixed(1)+'" stroke="#1E63B5" stroke-width="'+(small?2.5:3)+'"/>';
+  s+='<line x1="'+x0+'" y1="'+yi.toFixed(1)+'" x2="'+x1+'" y2="'+yi.toFixed(1)+'" stroke="#3A5068" stroke-width="2" stroke-dasharray="6 4"/>';
+  s+='<line x1="'+x0+'" y1="'+yB+'" x2="'+x1+'" y2="'+yf(endM).toFixed(1)+'" stroke="#1E4F80" stroke-width="'+(small?2.5:3)+'"/>';
   if(isFinite(pb.yrs)&&pb.yrs<=horizon){
     var px=xf(pb.yrs), txt=fPayback(pb.yrs).txt;
-    s+='<line x1="'+px.toFixed(1)+'" y1="'+yi.toFixed(1)+'" x2="'+px.toFixed(1)+'" y2="'+yB+'" stroke="#1E63B5" stroke-width="1.2" stroke-dasharray="3 3"/><circle cx="'+px.toFixed(1)+'" cy="'+yi.toFixed(1)+'" r="'+(small?5:6)+'" fill="#1E63B5" stroke="#fff" stroke-width="2"/>';
+    s+='<line x1="'+px.toFixed(1)+'" y1="'+yi.toFixed(1)+'" x2="'+px.toFixed(1)+'" y2="'+yB+'" stroke="#D9731F" stroke-width="1.2" stroke-dasharray="3 3"/><circle id="pt-payback'+(small?'-rp':'')+'" cx="'+px.toFixed(1)+'" cy="'+yi.toFixed(1)+'" r="'+(small?5:6)+'" fill="#D9731F" stroke="#fff" stroke-width="2"/>';
     var left=px>x0+80;
-    s+='<text x="'+(left?px-10:px+10).toFixed(1)+'" y="'+(yi-12).toFixed(1)+'" text-anchor="'+(left?'end':'start')+'" class="note'+cls+' strong">회수 시점 '+txt+'</text>';
+    s+='<text x="'+(left?px-10:px+10).toFixed(1)+'" y="'+((left||small)?yi-12:yi+18).toFixed(1)+'" text-anchor="'+(left?'end':'start')+'" class="note'+cls+' strong">회수 시점 '+txt+'</text>';
   }
   s+='<text x="'+(x1-4)+'" y="'+(yi+18).toFixed(1)+'" text-anchor="end" class="note'+cls+' amber">추가 투자비 '+fMoney(pb.inv)+'</text>';
   if(small) s+='<text x="'+(x1-4)+'" y="'+(yf(endM)+18).toFixed(1)+'" text-anchor="end" class="note sm blue">누적 절감액</text>';
@@ -823,7 +915,7 @@ function pbResults(sc){
     '<div class="kpi hl"><span class="k">회수기간</span><span class="v">'+pf.v+'<span class="u">'+pf.u+'</span></span><span class="s">'+(isFinite(pb.yrs)?pb.yrs.toFixed(3)+'년, ':'')+'추가 투자비 '+fMoney(pb.inv)+'</span></div></section>';
   if(warn) h+='<div class="issue warn">'+ic('warn')+'<div><b>회수기간</b><span>'+warn+'</span></div></div>';
   var base=pb.price>0?pb.price:10000, list=[base*0.5,base,base*1.5];
-  h+='<div class="pb-charts"><section class="panel"><div class="panel-head"><h2>누적 절감액</h2><span class="sub">투자비 선을 넘는 곳이 회수 시점입니다</span></div><div class="panel-body"><div class="legend"><span><i class="ln c"></i>누적 절감액</span><span><i class="ln inv"></i>추가 투자비</span></div>'+cumChart(pb,false)+'</div></section>'+
+  h+='<div class="pb-charts"><section class="panel"><div class="panel-head"><h2>누적 절감액</h2>'+tip('누적 절감액이 투자비 선을 넘는 곳이 회수 시점입니다.')+'</div><div class="panel-body"><div class="legend"><span><i class="ln c"></i>누적 절감액</span><span><i class="ln inv"></i>추가 투자비</span><span><i class="ln pt"></i>회수 시점</span></div>'+cumChart(pb,false)+'</div></section>'+
     '<section class="panel"><div class="panel-head"><h2>단가 민감도</h2></div><div class="panel-body tight"><table class="dt sens"><thead><tr><th class="r">단가 원/kg</th><th class="r">연간 절감액</th><th class="r">회수기간</th></tr></thead><tbody>'+
     list.map(function(pr,i){var q=payback(sc,pr), f=fPayback(q.yrs); return '<tr class="'+(i===1&&pb.price>0?'cur':'')+'"><td class="r">'+comma(pr)+(i===1&&pb.price>0?'<span class="badge accent sm">현재</span>':'')+'</td><td class="r">'+(q.save>0?fMoney(q.save):'–')+'</td><td class="r"><b>'+f.txt+'</b><em>'+(isFinite(q.yrs)?q.yrs.toFixed(3)+'년':'')+'</em></td></tr>';}).join('')+
     '</tbody></table><p class="caption pad">단가가 오를수록 회수기간이 짧아집니다.</p></div></section></div>';
@@ -871,12 +963,12 @@ function netSmall(r,id){
   var foam=r.p.method==='foam', rows=foam?[[byK.foam,44],[byK.parts,132]]:[[byK.rad,24],[byK.gas,66],[byK.sup,112],[byK.parts,152]];
   var dash={gas:'2 3',sup:'6 3'}, maxQ=Math.max.apply(null,ps.map(function(p){return p.Q;}))||1;
   var s='<svg class="chart" width="682" height="168" viewBox="0 0 682 168" role="img" aria-label="열저항망 축소판">'+patDefs(id);
-  s+='<rect x="0" y="54" width="78" height="68" rx="6" fill="#FFFFFF" stroke="#16202A"/><text x="10" y="78" class="nlab sm">외기</text><text x="10" y="102" class="nval sm">'+r.p.Ta+' °C</text>';
+  s+='<rect x="0" y="54" width="78" height="68" rx="6" fill="#FFFFFF" stroke="#0F2740"/><text x="10" y="78" class="nlab sm">외기</text><text x="10" y="102" class="nval sm">'+r.p.Ta+' °C</text>';
   var y0=rows[0][1], y1=rows[rows.length-1][1];
-  s+='<line x1="78" y1="88" x2="100" y2="88" stroke="#16202A" stroke-width="1.2"/><line x1="100" y1="'+y0+'" x2="100" y2="'+y1+'" stroke="#16202A" stroke-width="1.2"/><line x1="520" y1="'+y0+'" x2="520" y2="'+y1+'" stroke="#16202A" stroke-width="1.2"/><line x1="520" y1="88" x2="542" y2="88" stroke="#16202A" stroke-width="1.2"/>';
+  s+='<line x1="78" y1="88" x2="100" y2="88" stroke="#0F2740" stroke-width="1.2"/><line x1="100" y1="'+y0+'" x2="100" y2="'+y1+'" stroke="#0F2740" stroke-width="1.2"/><line x1="520" y1="'+y0+'" x2="520" y2="'+y1+'" stroke="#0F2740" stroke-width="1.2"/><line x1="520" y1="88" x2="542" y2="88" stroke="#0F2740" stroke-width="1.2"/>';
   rows.forEach(function(row){var p=row[0],y=row[1],sw=Math.max(1.4,7.8*p.Q/maxQ);
     s+='<line x1="100" y1="'+y+'" x2="520" y2="'+y+'" stroke="'+p.color+'" stroke-width="'+sw.toFixed(1)+'"'+(dash[p.k]?' stroke-dasharray="'+dash[p.k]+'"':'')+'/><rect x="296" y="'+(y-8)+'" width="48" height="16" rx="2" fill="#FFFFFF" stroke="'+p.color+'" stroke-width="1.5"/><text x="112" y="'+(y-7)+'" class="llab sm">'+p.name+'</text><text x="510" y="'+(y-7)+'" text-anchor="end" class="lval sm">'+fW(p.Q)+' W</text>';});
-  s+='<rect x="542" y="54" width="140" height="68" rx="6" fill="#FFFFFF" stroke="#16202A" stroke-width="1.5"/><text x="552" y="78" class="nlab sm">'+r.p.fluid.short+' '+(r.p.Tf<0?'−'+Math.abs(r.p.Tf):r.p.Tf)+' °C</text><text x="552" y="102" class="nval sm">합계 '+fW(r.Q)+' W</text>';
+  s+='<rect x="542" y="54" width="140" height="68" rx="6" fill="#FFFFFF" stroke="#0F2740" stroke-width="1.5"/><text x="552" y="78" class="nlab sm">'+r.p.fluid.short+' '+(r.p.Tf<0?'−'+Math.abs(r.p.Tf):r.p.Tf)+' °C</text><text x="552" y="102" class="nval sm">합계 '+fW(r.Q)+' W</text>';
   return s+'</svg>';
 }
 function reportPages(pfx){
@@ -907,7 +999,7 @@ function reportPages(pfx){
     p2+=sec('단열 비교')+'<table class="rp-t"><thead><tr><th>안</th><th class="r">열유입 W</th><th class="r">BOG kg/년</th><th class="r">손실액 원/년</th><th class="r">'+base+' 대비</th></tr></thead><tbody>'+
       ['A','B','C'].map(function(k){var x=sc[k]; return '<tr><td>'+k+' '+esc(x.title)+(k===base?' (기준안)':'')+'</td><td class="r">'+fW(x.Q)+'</td><td class="r">'+fs3(x.bogYr)+'</td><td class="r">'+comma(sig3v(x.loss))+'</td><td class="r">'+(k===base?'기준':fRed((x.Q-sc[base].Q)/sc[base].Q*100))+'</td></tr>';}).join('')+'</tbody></table>'+
       '<svg class="chart" width="682" height="78" viewBox="0 0 682 78" role="img" aria-label="안별 열유입 막대">'+patDefs(id)+
-      ['A','B','C'].map(function(k,i){var w=Math.max(2,520*sc[k].Q/maxQ), y=2+26*i, f=k==='A'?'#BCC5CE':k==='B'?'url(#'+id+'-scb)':'#1E63B5'; return '<text x="0" y="'+(y+12)+'" class="llab sm">'+k+'</text><rect x="22" y="'+y+'" width="'+w.toFixed(1)+'" height="16" rx="2" fill="'+f+'"/><text x="'+(30+w).toFixed(1)+'" y="'+(y+13)+'" class="lval sm">'+fW(sc[k].Q)+' W</text>';}).join('')+'</svg></section>';
+      ['A','B','C'].map(function(k,i){var w=Math.max(2,520*sc[k].Q/maxQ), y=2+26*i, f=k==='A'?TILE.A.bg:k==='B'?'url(#'+id+'-scb)':TILE.C.bg; return '<text x="0" y="'+(y+12)+'" class="llab sm">'+k+'</text><rect x="22" y="'+y+'" width="'+w.toFixed(1)+'" height="16" rx="2" fill="'+f+'"/><text x="'+(30+w).toFixed(1)+'" y="'+(y+13)+'" class="lval sm">'+fW(sc[k].Q)+' W</text>';}).join('')+'</svg></section>';
   }
   if(rep.pb){
     var pb=payback(sc), pf=fPayback(pb.yrs);
@@ -917,7 +1009,8 @@ function reportPages(pfx){
   if(rep.asm){
     p2+=sec('계산 가정과 열저항망')+netSmall(r,pfx+'nc')+'<dl class="rp-dl">'+[['외기 온도',p.Ta+' °C'],[p.fluid.short+' 온도',(p.Tf<0?'−'+Math.abs(p.Tf):p.Tf)+' °C'],['증발잠열',p.latent+' kJ/kg'],['연간 운전',comma(p.hours)+' h'],['단가',comma(p.price)+'원/kg'],['회수율',p.rec+' %']].map(function(a){return '<div><dt>'+a[0]+'</dt><dd>'+a[1]+'</dd></div>';}).join('')+'</dl></section>';
   }
-  p2+='<p class="rp-notice">설계 검토용 추정치입니다. 제조사 사양과 실측으로 확인하세요. 단가와 회수율은 입력값 기준 추정입니다.</p>'+foot(2)+'</div>';
+  p2+='<div class="rp-end"><p class="rp-notice">설계 검토용 추정치입니다. 제조사 사양과 실측으로 확인하세요. 단가와 회수율은 입력값 기준 추정입니다.</p>'+
+    '<table class="rp-sign"><tr><th>검토자</th><th>서명</th><th>일자</th></tr><tr><td id="rp-reviewer"></td><td id="rp-sign"></td><td id="rp-date"></td></tr></table></div>'+foot(2)+'</div>';
   return [p1,p2].map(fixW);
 }
 function fixW(h){ return h.replace(/width="100%"/g,'width="682"'); }
@@ -1086,7 +1179,7 @@ function act(el){
       save(); renderInput(); toast(GNAME[v]+'을(를) 기본값으로 되돌렸습니다.'); break;
     case 'add-seg':
       var letter=String.fromCharCode(65+state.segs.length%26), last=state.segs[state.segs.length-1]||D.segs[1];
-      state.segs.push({name:letter+' 새 구간',len:'',iod:last.iod,it:last.it,ood:last.ood,ot:last.ot,mat:last.mat}); save(); renderInput();
+      state.segs.push({name:letter+' 새 구간',len:'',dn:last.dn||'직접 입력',iod:last.iod,it:last.it,ood:last.ood,ot:last.ot,mat:last.mat}); save(); renderInput();
       var ni=document.querySelector('[data-seg="'+(state.segs.length-1)+'"][data-f="len"]'); if(ni) ni.focus(); break;
     case 'dup-seg': var c=Object.assign({},state.segs[+v]); c.name=c.name+' 복사'; state.segs.splice(+v+1,0,c); save(); renderInput(); break;
     case 'del-seg': if(state.segs.length>1){ state.segs.splice(+v,1); save(); renderInput(); } break;

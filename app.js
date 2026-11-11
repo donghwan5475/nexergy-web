@@ -490,7 +490,21 @@ function fld(o){
 function panel(g,title,sub,body,reset){
   return '<section class="panel grp" id="grp-'+g+'"><div class="panel-head"><h2>'+title+'</h2>'+(sub?tip(sub):'')+'<span class="right">'+(reset?'<button type="button" class="btn ghost" data-act="reset" data-v="'+g+'">'+ic('reset')+'기본값으로 되돌리기</button>':'')+'</span></div><div class="panel-body">'+body+'</div></section>';
 }
-/* 내관 호칭 (KS D 3576). 칸 키: seg.(구간번호).dn. 외경·두께 자동 채움은 팀에서 연결 */
+/* 내관 호칭 (KS D 3576). 칸 키: seg.(구간번호).dn.
+   DN_DIM: 호칭을 고르면 채우는 치수 [내관 외경, 내관 두께, 외관 외경, 외관 두께] mm.
+   내관은 KS D 3576 Sch 5S, 외관은 진공층 여유를 둔 상위 호칭의 Sch 10S (Nexergy 기본 조합, 직접 고칠 수 있음). */
+var DN_DIM={
+  '15A':['21.7','1.65','60.5','2.8'],   // 외관 50A
+  '20A':['27.2','1.65','76.3','3.0'],   // 외관 65A
+  '25A':['34.0','1.65','89.1','3.0'],   // 외관 80A
+  '32A':['42.7','1.65','114.3','3.0'],  // 외관 100A
+  '40A':['48.6','1.65','114.3','3.0'],  // 외관 100A
+  '50A':['60.5','1.65','139.8','3.4'],  // 외관 125A
+  '65A':['76.3','2.1','165.2','3.4'],   // 외관 150A
+  '80A':['89.1','2.1','165.2','3.4'],   // 외관 150A
+  '100A':['114.3','2.1','216.3','4.0']  // 외관 200A
+};
+var DN_FIELDS=['iod','it','ood','ot'];
 var DN_LIST=[['15A','15A (DN15)'],['20A','20A (DN20)'],['25A','25A (DN25)'],['32A','32A (DN32)'],['40A','40A (DN40)'],['50A','50A (DN50)'],['65A','65A (DN65)'],['80A','80A (DN80)'],['100A','100A (DN100)'],['직접 입력','직접 입력']];
 function segTable(){
   var rows=state.segs.map(function(s,i){
@@ -1132,7 +1146,15 @@ document.addEventListener('input',function(e){
     if(d.k==='ui.pbBase'||d.k==='ui.pbAlt'){ save(); refreshPayback(); return; }
     onValueChange(); return;
   }
-  if(d.seg!==undefined){ state.segs[+d.seg][d.f]=t.value; onValueChange(); return; }
+  if(d.seg!==undefined){
+    var sg=state.segs[+d.seg]; sg[d.f]=t.value;
+    if(d.f==='dn'&&DN_DIM[t.value]){ // 호칭을 고르면 표준 치수를 채움
+      DN_FIELDS.forEach(function(f,j){ sg[f]=DN_DIM[t.value][j]; var el=document.querySelector('[data-seg="'+d.seg+'"][data-f="'+f+'"]'); if(el) el.value=sg[f]; });
+    } else if((d.f==='iod'||d.f==='it')&&DN_DIM[sg.dn]){ // 내관 치수를 직접 고쳐 표준과 달라지면 '직접 입력'으로
+      var std=DN_DIM[sg.dn]; if(num(sg.iod)!==num(std[0])||num(sg.it)!==num(std[1])){ sg.dn='직접 입력'; var se=document.getElementById('seg-'+d.seg+'-dn'); if(se) se.value=sg.dn; }
+    }
+    onValueChange(); return;
+  }
   if(d.part!==undefined){
     var p=state.parts[+d.part]; p[d.f]=t.value;
     if(d.f==='type'&&PARTTYPES[t.value]!=null){ p.w=String(PARTTYPES[t.value]); var wi=document.querySelector('[data-part="'+d.part+'"][data-f="w"]'); if(wi) wi.value=p.w; }
